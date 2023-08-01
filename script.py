@@ -60,7 +60,7 @@ advanced_search.click()
 search_btn = WebDriverWait(driver, 5).until(EC.element_to_be_clickable((By.ID, "btnSearch")))
 search_btn.click()
 
-# BeautifulSoup Scraping
+# BeautifulSoup Scraping:
 courses_div_element = WebDriverWait(driver, 15).until(
     EC.visibility_of_element_located((By.XPATH, '//*[@id="contentPage"]/div[2]/div/div/div[1]/div[3]/div')))
 # Extract the innerHTML of the div using Selenium
@@ -71,26 +71,49 @@ soup = BeautifulSoup(courses_div, "lxml")
 # Find all course divs
 all_courses = soup.find_all('div', class_='jss569 grid-item jss571 jss524 jss615 jss568 jss621 jss650')
 
-# print(len(all_courses))
-
 
 def get_course_info(all_courses):
-    with open('course_info.txt', 'a', encoding='utf-8') as file:
+    with open('course_info.txt', 'w', encoding='utf-8') as file:
         for course in all_courses:
             # Extract the text from the span inside the h4 tag
             course_name = course.find('h4').find('span').text.strip()
+            file.write(course_name + "\n")
+
             # Extract the text from the first span with course details
             section_details = course.find_all('span', class_='jss426 jss413 jss768 jss761 jss429 jss425 jss455')[
                 0].text.strip()
+            file.write(section_details + "\n")
+
             # Extract the text from the second span with course details
             course_details = course.find_all('span', class_='jss426 jss413 jss768 jss761 jss429 jss425 jss455')[
                 1].text.strip()
-
-            # Write the course information to the file
-            file.write(course_name + "\n")
-            file.write(section_details + "\n")
             file.write(course_details + "\n")
+
+            # get the link of the course
+            course_link = course.find('h4').find('button')
+            button_id = course_link['id']
+            driver.find_element_by_id(button_id).click()
+
+            popup = WebDriverWait(driver, 15).until(
+                EC.visibility_of_element_located((By.XPATH, '//*[@id="sectionDetailModal"]/div[3]/div')))
+            time.sleep(0.5)
+            schedules = popup.find_elements_by_class_name("jss569.grid-container.jss570.jss523.jss592.jss545")
+
+            for schedule in schedules:
+                all_p_tags = schedule.find_elements_by_tag_name('p')
+                for p_tag in all_p_tags:
+                    paragraph_content = p_tag.text.strip()
+                    if paragraph_content == "Course Description":
+                        break
+                    file.write(p_tag.text.strip() + "\n")
+
             file.write("---\n")
+
+            # Close the popup
+            close_button = popup.find_element_by_class_name('dialog-close-button')
+            close_button.click()
+            WebDriverWait(driver, 5).until(EC.invisibility_of_element_located((By.XPATH, '//*[@id="sectionDetailModal"]/div[3]/div')))
+
         print("Mission Accomplished")
         file.close()
 
