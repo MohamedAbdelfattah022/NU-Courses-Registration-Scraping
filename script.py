@@ -1,5 +1,6 @@
 from bs4 import BeautifulSoup
 import time
+import pymongo
 from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
@@ -148,6 +149,8 @@ def scrape_course_info(driver):
         print(f"SCHEDULE:\n{schedule_list}")
         print(f"{course_count} courses has been parsed")
         print("")
+        if course_count == 100:
+            break
 
     return course_info_list
 
@@ -168,6 +171,120 @@ def save_course_info_to_file(course_info_list):
             print(f"{count} written to file")
 
 
+def connect_to_db():
+    client = pymongo.MongoClient('mongodb+srv://admin:admin@schedsdb.j6evefp.mongodb.net/')
+    # print(client.list_database_names())
+    mydb = client['scheds']
+    return mydb.courses
+
+
+def reFormatDataForDB(course_info_list):
+    courses = {}
+    for course_info in course_info_list:
+        line = course_info['Course Name'].strip()
+        courseCode = line.split(":")[0].strip()
+        courseName = line.split(":", 3)[1].strip()
+        courses[courseCode] = {
+            "courseName": courseName,
+            "Lecture": [],
+            "Tutorial": [],
+            "Lab": [],
+            "Others": []
+        }
+
+    for course_info in course_info_list:
+        line = course_info['Instructor Name']
+        instructor = line.strip()
+        line = course_info['Course Name'].strip()
+        courseCode = line.split(":")[0].strip()
+        courseName = line.split(":", 3)[1].strip()
+        line = course_info['Section Details']
+        sectionParts = line.split("|")
+        section = sectionParts[0].split(":")[1].strip()
+        subType = sectionParts[2].split(":")[1].strip()
+        cntr = 0
+        time1 = ""
+        time2 = ""
+        for line in course_info["Schedule"]:
+            day = ""
+            cnt = 0
+            # print(line)
+            cntr += 1
+            if line == "No schedule":
+                break
+
+            if cntr % 2 == 1:
+                parts = line.split(" ")
+                if len(parts[0]) == 4:
+                    p0 = '0' + parts[0]
+                else:
+                    p0 = parts[0]
+
+                if len(parts[3]) == 4:
+                    p3 = '0' + parts[3]
+                else:
+                    p3 = parts[3]
+
+                time1 = p0  #######
+                time2 = p3  #######
+                if parts[1].strip() == "PM" and len(parts[0]) == 4:
+                    hours, minutes = parts[0].split(":")
+                    hours = int(hours)
+                    hours = (hours + 12) % 24
+                    time1 = f"{hours:02d}:{minutes}"
+
+                if parts[4].strip() == "PM" and len(parts[3]) == 4:
+                    hours, minutes = parts[3].split(":")
+                    hours = int(hours)
+                    hours = (hours + 12) % 24
+                    time2 = f"{hours:02d}:{minutes}"
+            else:
+                day = line.strip()
+
+                # processing
+                if subType == "Lecture" or subType == "Tutorial" or subType == "Lab":
+                    if cnt > 1:
+                        section = section + chr(90 - cnt + 1)
+                    courses[courseCode][subType].append({
+                        "sectionNumber": section,
+                        "day": day,
+                        "courseCode": courseCode,
+                        "courseName": courseName,
+                        "instructor": instructor,
+                        "startTime": time1,
+                        "endTime": time2
+                    })
+                else:
+                    if cnt > 1:
+                        section = section + chr(91 - cnt + 1)
+                    courses[courseCode]["Others"].append({
+                        "sectionNumber": section,
+                        "day": day,
+                        "courseCode": courseCode,
+                        "courseName": courseName,
+                        "instructor": instructor,
+                        "startTime": time1,
+                        "endTime": time2
+                    })
+
+    return courses
+
+
+def save_to_db(courses, coursesTable):
+    print("Writing data to db")
+    for i in courses:
+        # print(courses[i])
+        if coursesTable.find_one({i: {"$exists": True}}):
+            coursesTable.update_one({i: {"$exists": True}}, {"$set": {i: courses[i]}})
+            print(i + " : updated")
+            # continue
+        else:
+            print(i)
+            coursesTable.insert_one({
+                i: courses[i]
+            })
+
+
 def main():
     try:
         user_name = input("Enter your Username: ")
@@ -178,8 +295,11 @@ def main():
         time.sleep(2)
         navigate_to_courses(driver)
         course_info_list = scrape_course_info(driver)
-        save_course_info_to_file(course_info_list)
-
+        coursesTable = connect_to_db()
+        # coursesTable.insert_one({"asda": "asdasd"})
+        # save_course_info_to_file(course_info_list)
+        newCourses = reFormatDataForDB(course_info_list)
+        save_to_db(newCourses, coursesTable)
         print("Mission Accomplished")
         driver.quit()
         print("Browser closed.")
@@ -190,3 +310,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
