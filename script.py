@@ -149,8 +149,8 @@ def scrape_course_info(driver):
         print(f"SCHEDULE:\n{schedule_list}")
         print(f"{course_count} courses has been parsed")
         print("")
-        if course_count == 100:
-            break
+        # if course_count == 100:
+        #     break
 
     return course_info_list
 
